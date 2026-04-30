@@ -40,6 +40,15 @@
 
   <script type="text/babel">
     const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+    function useDebounce(value, delay) {
+      const [debounced, setDebounced] = useState(value);
+      useEffect(() => {
+        const t = setTimeout(() => setDebounced(value), delay);
+        return () => clearTimeout(t);
+      }, [value, delay]);
+      return debounced;
+    }
     const { 
       BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
       Line, ComposedChart, PieChart: RechartsPie, Pie, Cell, Sankey, ReferenceLine 
@@ -386,12 +395,23 @@
       );
     };
 
-    const KPIBox = ({ title, value }) => (
-      <div className="bg-white rounded-lg shadow-sm p-4 flex flex-col items-center justify-center border border-slate-100/60 hover:shadow-md transition-shadow">
-        <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 text-center">{title}</div>
-        <div className="text-3xl font-bold text-slate-800 tracking-tight text-center truncate w-full px-2" title={value}>{value}</div>
-      </div>
-    );
+    const KPIBox = ({ title, value, accent = 'default', sub = null }) => {
+      const accentStyles = {
+        default: 'border-slate-100/60 text-slate-800',
+        danger:  'border-red-200 bg-red-50/40 text-red-700',
+        warning: 'border-amber-200 bg-amber-50/40 text-amber-700',
+        success: 'border-emerald-200 bg-emerald-50/40 text-emerald-700',
+        info:    'border-blue-200 bg-blue-50/40 text-blue-700',
+      };
+      const style = accentStyles[accent] || accentStyles.default;
+      return (
+        <div className={`bg-white rounded-lg shadow-sm p-4 flex flex-col items-center justify-center border hover:shadow-md transition-shadow ${style}`}>
+          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 text-center">{title}</div>
+          <div className={`text-2xl font-bold tracking-tight text-center truncate w-full px-2 ${accentStyles[accent]?.split(' ').pop()}`} title={value}>{value}</div>
+          {sub && <div className="text-[10px] text-slate-400 mt-1 text-center">{sub}</div>}
+        </div>
+      );
+    };
 
     const EmptyState = ({ message = "No visualizable data available.", height = "h-96", icon = <Icons.Search /> }) => (
       <div className={`bg-white rounded-lg shadow-sm border border-gray-200 ${height} flex flex-col items-center justify-center text-slate-400`}>
@@ -574,12 +594,12 @@
           <p className="text-[10px] text-slate-400 absolute top-12 left-5 z-10">Click bar to filter</p>
           <div className="flex-1 w-full mt-4">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }}>
+              <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 90 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} interval={0} angle={-45} textAnchor="end" />
                 <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
                 <YAxis yAxisId="right" orientation="right" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(val) => `${val}%`} />
-                <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{fill: '#f8fafc'}} />
+                <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{fill: '#f8fafc'}} formatter={(value, name, props) => { if (name === "Defective Q'ty") return [`${value} (${props.payload.cumulativePercent}% cumulative)`, name]; return [`${value}%`, name]; }} />
                 <Bar yAxisId="left" dataKey="value" name="Defective Q'ty" radius={[4, 4, 0, 0]} barSize={40} onClick={(entry) => { if(entry && entry.name) onDrillDown('problemGroup', entry.name); }} className="cursor-pointer-bar">
                   {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.cumulativePercent <= 80 ? '#ef4444' : '#94a3b8'} />)}
                 </Bar>
@@ -720,8 +740,18 @@
         <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 flex flex-col mt-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-bold text-slate-800">Raw Data Records</h2>
-            <div className="text-sm font-medium text-slate-500 bg-slate-50 px-3 py-1 rounded-full">
-              Showing {((currentPage - 1) * rowsPerPage) + 1} - {Math.min(currentPage * rowsPerPage, sortedData.length)} of {sortedData.length}
+            <div className="flex items-center gap-3">
+              <div className="text-sm font-medium text-slate-500 bg-slate-50 px-3 py-1 rounded-full">
+                Showing {((currentPage - 1) * rowsPerPage) + 1}–{Math.min(currentPage * rowsPerPage, sortedData.length)} of {sortedData.length}
+              </div>
+              <button onClick={() => {
+                const headers = ['Week','Vendor','Type','Model','Category','Problem Group','Qty','Description'];
+                const rows = sortedData.map(r => [r.week, r.vendor, r.type, r.modelName, r.category, r.problemGroup, getQty(r), `"${(r.problemDescription||'').replace(/"/g,'""')}"`]);
+                const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+                const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv); a.download = 'defect_data.csv'; a.click();
+              }} className="text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-md transition-colors border border-slate-200">
+                ↓ Export CSV
+              </button>
             </div>
           </div>
           <div className="overflow-x-auto max-h-[500px] custom-scrollbar border border-slate-200 rounded-lg">
@@ -823,7 +853,10 @@
         e.target.value = '';
       };
 
-      const filteredData = useFilteredData(data, filters);
+      const debouncedKeyword = useDebounce(filters.keyword, 300);
+      const effectiveFilters = useMemo(() => ({ ...filters, keyword: debouncedKeyword }), [filters, debouncedKeyword]);
+      const [filtersOpen, setFiltersOpen] = useState(true);
+      const filteredData = useFilteredData(data, effectiveFilters);
       const kpis = useKPIs(filteredData, statusData);
 
       const getUniqueValues = useCallback((key) => {
@@ -898,33 +931,33 @@
           </header>
 
           {/* Filter Panel */}
-          <div className="bg-white p-5 rounded-lg shadow-sm border border-slate-200 mb-6 flex flex-col gap-5">
-            <div className="flex flex-col md:flex-row justify-between md:items-center gap-3">
-              <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2 uppercase tracking-wide"><Icons.Search /> Global Filters</h2>
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 mb-6">
+            <div className="p-4 flex flex-col md:flex-row justify-between md:items-center gap-3 cursor-pointer select-none" onClick={() => setFiltersOpen(o => !o)}>
+              <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2 uppercase tracking-wide"><Icons.Search /> Global Filters {activeFilterKeys.length > 0 && <span className="bg-blue-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{activeFilterKeys.length}</span>}</h2>
+              <div className="flex items-center gap-2">
+                {activeFilterKeys.length > 0 && <span className="text-xs text-slate-400">{activeFilterKeys.map(k => filters[k]).join(', ')}</span>}
+                <span className="text-slate-400">{filtersOpen ? <Icons.ChevronUp /> : <Icons.ChevronDown />}</span>
+              </div>
               
-              {/* Active Filter Tags */}
-              <div className="flex flex-wrap items-center gap-2 flex-1 md:ml-6">
+            </div>
+            {filtersOpen && <div className="px-4 pb-4 flex flex-col gap-4 border-t border-slate-100">
+              <div className="flex flex-wrap items-center gap-2 pt-3">
                 {activeFilterKeys.map(k => (
-                  <span key={k} className="bg-blue-50 text-blue-700 text-xs font-medium px-2.5 py-1 rounded-full border border-blue-200 flex items-center gap-1.5 shadow-sm">
+                  <span key={k} className="bg-blue-50 text-blue-700 text-xs font-medium px-2.5 py-1 rounded-full border border-blue-200 flex items-center gap-1.5 shadow-sm" onClick={e => e.stopPropagation()}>
                     {k.replace('modelName', 'Model').replace('problemGroup', 'Problem')}: {filters[k]}
                     <button onClick={() => setFilters(prev => ({...prev, [k]: null}))} className="hover:text-red-500 hover:bg-red-50 rounded-full p-0.5 transition-colors"><Icons.X /></button>
                   </span>
                 ))}
+                {(activeFilterKeys.length > 0 || filters.keyword) && (
+                  <button onClick={e => { e.stopPropagation(); setFilters(initialFilters); }} className="text-xs font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 hover:text-slate-800 px-3 py-1.5 rounded-md transition-colors">Clear All</button>
+                )}
               </div>
-
-              {(activeFilterKeys.length > 0 || filters.keyword) && (
-                <button onClick={() => setFilters(initialFilters)} className="text-xs font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 hover:text-slate-800 px-3 py-1.5 rounded-md transition-colors whitespace-nowrap">
-                  Clear All
-                </button>
-              )}
-            </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
-              {['vendor', 'type', 'modelName', 'category', 'problemGroup'].map(key => (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4" onClick={e => e.stopPropagation()}>
+              {['vendor', 'type', 'modelName', 'category', 'problemGroup', 'week'].map(key => (
                 <div className="flex flex-col" key={key}>
                   <label className="text-[11px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{key.replace('modelName', 'Model').replace('problemGroup', 'Problem')}</label>
                   <select className="border border-slate-200 rounded-md p-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50/50 hover:bg-white transition-colors cursor-pointer" value={filters[key] || 'ALL'} onChange={(e) => setFilters(prev => ({ ...prev, [key]: e.target.value === 'ALL' ? null : e.target.value }))}>
-                    <option value="ALL">All {key.replace('modelName', 'Model')}</option>
+                    <option value="ALL">All {key.replace('modelName', 'Model').replace('problemGroup', 'Problem')}</option>
                     {getUniqueValues(key).map(v => <option key={v} value={v}>{v}</option>)}
                   </select>
                 </div>
@@ -934,14 +967,17 @@
                 <input type="text" placeholder="Search..." className="border border-slate-200 rounded-md p-2 text-sm w-full outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50/50 hover:bg-white transition-colors" value={filters.keyword} onChange={(e) => setFilters(prev => ({ ...prev, keyword: e.target.value }))} />
               </div>
             </div>
+            </div>}
           </div>
 
           {/* KPIs */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <KPIBox title="Total Defect Qty" value={kpis.totalDefective.toLocaleString()} />
-            <KPIBox title="Worst Model" value={kpis.worstModelName} />
-            <KPIBox title="Top Vendor" value={kpis.topVendorName} />
-            <KPIBox title="Top Problem" value={kpis.topIssueName} />
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+            <KPIBox title="Total Defect Qty" value={kpis.totalDefective.toLocaleString()} accent={kpis.totalDefective > 0 ? 'danger' : 'default'} sub={`${filteredData.length} records`} />
+            <KPIBox title="Failure Rate" value={`${kpis.overallFailureRate}%`} accent={parseFloat(kpis.overallFailureRate) > 5 ? 'danger' : parseFloat(kpis.overallFailureRate) > 2 ? 'warning' : 'success'} sub="Fail / Insp (Issue List)" />
+            <KPIBox title="WoW Trend" value={kpis.wowTrend} accent={kpis.wowTrend.startsWith('+') ? 'danger' : kpis.wowTrend.startsWith('-') ? 'success' : 'default'} sub="Status Table" />
+            <KPIBox title="Top Problem" value={kpis.topIssueName} accent="warning" />
+            <KPIBox title="Worst Model" value={kpis.worstModelName} accent="info" />
+            <KPIBox title="Active Weeks" value={kpis.activeWeeks} accent="default" sub={`Vendors: ${kpis.totalVendors}`} />
           </div>
 
           {/* Charts */}
