@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LCS Quality Dashboard Pro</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- SheetJS -->
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+
+  <!-- Recharts -->
+  <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
+  <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+
+  <style>
+    body { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f3f2f1; color: #0f172a; }
+    .loader { border: 3px solid #e2e8f0; border-top: 3px solid #3b82f6; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .custom-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    .cursor-pointer-bar { cursor: pointer; transition: opacity 0.2s; }
+    .cursor-pointer-bar:hover { opacity: 0.8; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
+    const { 
+      BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
+      Line, ComposedChart, PieChart: RechartsPie, Pie, Cell, Sankey, ReferenceLine 
+    } = window.Recharts;
+
+    // ==========================================
+    // 1. CONFIGURATION & PROBLEM GROUPS
+    // ==========================================
+    const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#64748b'];
+
+    const ALIASES = {
+      type: ['Type', 'Tyoe', 'type', 'Product Type'],
+      inspQty: ['Insp. Q\'ty', 'Insp. Qty', 'Insp. Quantity', 'Input Q\'ty', 'Input Qty'],
+      failQty: ['Fail Q\'ty', 'Fail Qty', 'Failure Qty'],
+      defectiveQty: ['Defective Qty', 'Defect Qty', 'Defective Quantity'],
+      modelName: ['Model Name', 'Model'],
+      problemDesc: ['Problem Description', 'Problem', 'Description', 'Symptom', 'Issue'],
+      vendor: ['Vendor', 'Supplier', 'Maker'],
+      week: ['Week', 'WK', 'Date'],
+      category: ['Category', 'Cat']
+    };
+
+    const PROBLEM_GROUPS = [
+      { group: 'Leakage', regex: /\b(leak|leakage|leaking|drops)\b/i },
+      { group: 'Connector/Lock Defect', regex: /\b(qd|connector|lock|loose|coupling|insert|plug)\b/i },
+      { group: 'Gasket/O-ring', regex: /\b(gasket|o-ring|rubber|seal|silicone)\b/i },
+      { group: 'Label/SN Issue', regex: /\b(label|sn|date code|qr code|mismatch|print|barcode)\b/i },
+      { group: 'Missing Parts', regex: /\b(missing|screw|bracket|clamp|accessory|without)\b/i },
+      { group: 'Cosmetic Issue', regex: /\b(cosmetic|scratch|dent|stain|rust|mark|dirt|damage)\b/i },
+      { group: 'Valve Issue', regex: /\b(valve|vent|air|pressure)\b/i },
+      { group: 'Coolant Issue', regex: /\b(coolant|refill|contamination|level|liquid)\b/i },
+      { group: 'Power/Test Failure', regex: /\b(power|sensor|test|fail|boot|short|burn)\b/i },
+      { group: 'Packaging/Shipping', regex: /\b(packaging|carton|unboxing|shipping|box|foam)\b/i },
+    ];
+
+    // ==========================================
+    // 2. UTILITY FUNCTIONS
+    // ==========================================
+    const Icons = {
+      AlertTriangle: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>,
+      FileSpreadsheet: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z"/><path d="M8 11h8"/><path d="M8 15h8"/></svg>,
+      Users: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+      Monitor: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>,
+      Activity: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>,
+      Package: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>,
+      Search: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>,
+      X: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>,
+      Upload: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
+      ChevronUp: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m18 15-6-6-6 6"/></svg>,
+      ChevronDown: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>,
+      TrendingUp: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+    };
+
+    const getCol = (row, aliases) => {
+      for (const a of aliases) {
+        if (row[a] !== undefined && row[a] !== null && row[a] !== '') return row[a];
+      }
+      return '';
+    };
+
+    const getWeekNum = (weekStr) => {
+      if (!weekStr) return 0;
+      const match = String(weekStr).match(/\d+/);
+      return match ? parseInt(match[0], 10) : 0;
+    };
+
+    // UNIFIED METRICS: Priority is defectiveQty > failQty > 0.
+    const getQty = (item) => {
+      if (item.defectiveQty && item.defectiveQty > 0) return item.defectiveQty;
+      if (item.failQty && item.failQty > 0) return item.failQty;
+      return 0;
+    };
+
+    function categorizeProblem(desc) {
+      if (!desc) return 'Unknown';
+      for (const pg of PROBLEM_GROUPS) {
+        if (pg.regex.test(desc)) return pg.group;
+      }
+      return 'Other';
+    }
+
+    // ==========================================
+    // 3. EXCEL PARSERS & SCHEMA VALIDATION
+    // ==========================================
+    function findHeaderRow(rows) {
+      for (let i = 0; i < Math.min(10, rows.length); i++) {
+        const row = rows[i];
+        if (Array.isArray(row)) {
+           const str = row.join(' ').toLowerCase();
+           // Schema validation hint: looking for essential keywords
+           if (str.includes('week') || str.includes('vendor') || str.includes('model')) {
+             return i;
+           }
+        }
+      }
+      return 1; // Default
+    }
+
+    function parseIssueList(ws) {
+      const rawArray = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+      if (!rawArray || rawArray.length === 0) throw new Error("Issue List is empty.");
+      
+      const headerIdx = findHeaderRow(rawArray);
+      const rawData = window.XLSX.utils.sheet_to_json(ws, { defval: null, range: headerIdx });
+      
+      if (rawData.length === 0) throw new Error("No data found after headers in Issue List.");
+
+      return rawData.map((row, index) => {
+        const typeStr = getCol(row, ALIASES.type).toString().trim();
+        const descStr = getCol(row, ALIASES.problemDesc).toString().trim();
+        const vendor = getCol(row, ALIASES.vendor).toString().trim();
+        const modelName = getCol(row, ALIASES.modelName).toString().trim();
+        const category = getCol(row, ALIASES.category).toString().trim();
+        const week = getCol(row, ALIASES.week).toString().trim();
+
+        // Safely parse numbers
+        const inspQty = Number(getCol(row, ALIASES.inspQty)) || 0;
+        const failQty = Number(getCol(row, ALIASES.failQty)) || 0;
+        const defQty = Number(getCol(row, ALIASES.defectiveQty)) || 0;
+
+        // Skip invalid rows
+        if (!vendor && !modelName && !typeStr && !week && defQty === 0 && failQty === 0) return null;
+
+        return {
+          id: `row_${index}`,
+          vendor: vendor || 'Unknown',
+          type: typeStr || 'Unknown',
+          modelName: modelName || 'Unknown',
+          inspQty,
+          failQty,
+          defectiveQty: defQty,
+          problemDescription: descStr,
+          problemGroup: categorizeProblem(descStr),
+          category: category || 'Unknown',
+          week: week || 'Unknown',
+          weekNum: getWeekNum(week)
+        };
+      }).filter(Boolean);
+    }
+
+    function parseStatusTable(rows) {
+      const sections = [];
+      let currentSection = null;
+      let weeksMap = [];
+      
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || !row.length) continue;
+        
+        const col0 = String(row[0] || '').trim();
+        const col1 = String(row[1] || '').trim();
+        const rowString = row.join(' ').toUpperCase();
+        
+        // 1. Detect week headers. We look for rows starting with Index, Item, or containing WK/WEEK.
+        if ((col0 === 'Index' || col0 === 'Item' || rowString.includes('WK') || rowString.includes('WEEK')) && row.length > 2) {
+           // Ensure it's a header row by checking if it contains actual week identifiers
+           const hasWeekKeywords = row.some(cell => String(cell).toUpperCase().startsWith('W') || !isNaN(parseInt(String(cell))));
+           if (hasWeekKeywords) {
+               weeksMap = [];
+               for (let j = 2; j < row.length; j++) {
+                   const w = String(row[j]).trim();
+                   // Exclude summary columns like Total, YTD, Target which break the Trend Chart X-axis
+                   if (w && w !== 'null' && !w.toLowerCase().includes('total') && !w.toLowerCase().includes('ytd') && !w.toLowerCase().includes('avg') && !w.toLowerCase().includes('target')) {
+                       weeksMap.push({ label: w, colIdx: j });
+                   }
+               }
+           }
+        }
+        
+        // 2. Detect section title (e.g. "US IQC Defect Rate (CDU)")
+        if (col0 && !col0.startsWith('Index') && !col0.startsWith('Insp') && !col0.startsWith('Input') && !col0.startsWith('Weekly') && col0.length > 5) {
+          currentSection = { title: col0, data: [] };
+          sections.push(currentSection);
+        } else if (currentSection && weeksMap.length > 0) {
+           const isFailRow = col1.toLowerCase().includes('fail');
+           
+           if ((col0.startsWith('Insp') || col0.startsWith('Input')) && isFailRow) {
+             const failQtyRow = row;
+             let inspQtyRow = null;
+             
+             // Look ahead for Insp row
+             for(let k = 1; k <= 3; k++) {
+                if (rows[i+k] && (String(rows[i+k][1]).toLowerCase().includes('insp') || String(rows[i+k][1]).toLowerCase().includes('input'))) {
+                    inspQtyRow = rows[i+k]; break;
+                }
+             }
+             // Fallback: Look behind if Insp row is above Fail row
+             if (!inspQtyRow) {
+                for(let k = 1; k <= 3; k++) {
+                   if (rows[i-k] && (String(rows[i-k][1]).toLowerCase().includes('insp') || String(rows[i-k][1]).toLowerCase().includes('input'))) {
+                       inspQtyRow = rows[i-k]; break;
+                   }
+                }
+             }
+
+             if (failQtyRow && inspQtyRow) {
+               const dataPoints = [];
+               let lastActiveIndex = -1;
+               
+               for (let j = 0; j < weeksMap.length; j++) {
+                 const wObj = weeksMap[j];
+                 const fVal = failQtyRow[wObj.colIdx];
+                 const iVal = inspQtyRow[wObj.colIdx];
+                 
+                 const fQty = Number(fVal) || 0;
+                 const iQty = Number(iVal) || 0;
+                 const wNum = getWeekNum(wObj.label);
+                 
+                 dataPoints.push({
+                   week: wObj.label,
+                   weekNum: wNum > 0 ? wNum : parseInt(wObj.label) || 0,
+                   failQty: fQty,
+                   inspQty: iQty
+                 });
+                 
+                 // Strictly only consider >0 as active to trim trailing zero-filled formulas
+                 if (fQty > 0 || iQty > 0) {
+                   lastActiveIndex = j;
+                 }
+               }
+               
+               // Trim trailing weeks that have no data
+               if (lastActiveIndex >= 0) {
+                  currentSection.data = dataPoints.slice(0, lastActiveIndex + 1);
+               } else {
+                  currentSection.data = [];
+               }
+             }
+           }
+        }
+      }
+      return sections.filter(s => s.data && s.data.length > 0);
+    }
+
+    // ==========================================
+    // 4. CUSTOM HOOKS & METRICS
+    // ==========================================
+    function useFilteredData(data, filters) {
+      return useMemo(() => {
+        if (!data) return [];
+        return data.filter(item => {
+          if (filters.vendor && item.vendor !== filters.vendor) return false;
+          if (filters.type && item.type !== filters.type) return false;
+          if (filters.modelName && item.modelName !== filters.modelName) return false;
+          if (filters.category && item.category !== filters.category) return false;
+          if (filters.week && item.week !== filters.week) return false;
+          if (filters.problemGroup && item.problemGroup !== filters.problemGroup) return false;
+          if (filters.keyword) {
+            const kw = filters.keyword.toLowerCase();
+            const terms = kw.split(' ').filter(Boolean);
+            const targetText = `${item.problemDescription} ${item.modelName}`.toLowerCase();
+            if (!terms.every(term => targetText.includes(term))) return false;
+          }
+          return true;
+        });
+      }, [data, filters]);
+    }
+
+    function useKPIs(filteredData, statusData) {
+      return useMemo(() => {
+        let totalDefective = 0, totalInsp = 0, totalFail = 0;
+        const vendorMap = new Map(), modelMap = new Map(), weekSet = new Set(), issueMap = new Map();
+        
+        filteredData.forEach(item => {
+          const qty = getQty(item);
+          totalDefective += qty;
+          totalInsp += item.inspQty || 0;
+          totalFail += item.failQty || 0;
+          
+          if (item.vendor && item.vendor !== 'Unknown') {
+            vendorMap.set(item.vendor, (vendorMap.get(item.vendor) || 0) + qty);
+          }
+          if (item.modelName && item.modelName !== 'Unknown') {
+            modelMap.set(item.modelName, (modelMap.get(item.modelName) || 0) + qty);
+          }
+          if (item.week && item.week !== 'Unknown') weekSet.add(item.week);
+          
+          const pg = item.problemGroup || 'Unknown';
+          issueMap.set(pg, (issueMap.get(pg) || 0) + qty);
+        });
+        
+        const topIssue = Array.from(issueMap.entries()).sort((a, b) => b[1] - a[1])[0];
+        const worstModel = Array.from(modelMap.entries()).sort((a, b) => b[1] - a[1])[0];
+        const topVendor = Array.from(vendorMap.entries()).sort((a, b) => b[1] - a[1])[0];
+        
+        const failureRate = totalInsp > 0 ? ((totalFail / totalInsp) * 100).toFixed(2) : '0.00';
+
+        // Strict WoW Calculation from Status Table Only
+        let wowTrend = "N/A";
+        if (statusData && statusData.length > 0) {
+            // Extract weeks in their exact original column order from Excel
+            const orderedWeeks = [];
+            statusData.forEach(sec => {
+                sec.data.forEach(d => {
+                    if (!orderedWeeks.includes(d.week)) orderedWeeks.push(d.week);
+                });
+            });
+
+            const weekMap = new Map();
+            orderedWeeks.forEach(w => weekMap.set(w, { failQty: 0 }));
+            
+            statusData.forEach(sec => {
+                sec.data.forEach(d => {
+                    weekMap.get(d.week).failQty += d.failQty;
+                });
+            });
+
+            if (orderedWeeks.length >= 2) {
+                const lwName = orderedWeeks[orderedWeeks.length - 1];
+                const pwName = orderedWeeks[orderedWeeks.length - 2];
+                const lw = weekMap.get(lwName);
+                const pw = weekMap.get(pwName);
+                
+                if (pw.failQty > 0) {
+                    const change = ((lw.failQty - pw.failQty) / pw.failQty) * 100;
+                    wowTrend = (change > 0 ? '+' : '') + change.toFixed(1) + '%';
+                } else if (pw.failQty === 0) {
+                    wowTrend = lw.failQty > 0 ? '+100.0%' : '0.0%';
+                }
+            }
+        }
+        
+        return {
+          totalDefective, totalIssueCount: filteredData.length, totalVendors: vendorMap.size,
+          topIssueName: topIssue ? topIssue[0] : 'N/A', 
+          worstModelName: worstModel ? worstModel[0] : 'N/A',
+          topVendorName: topVendor ? topVendor[0] : 'N/A',
+          overallFailureRate: failureRate, activeWeeks: weekSet.size, wowTrend
+        };
+      }, [filteredData, statusData]);
+    }
+
+    // ==========================================
+    // 5. UI COMPONENTS
+    // ==========================================
+    const AlertBanner = ({ type, message, onClose }) => {
+      if (!message) return null;
+      const bg = type === 'error' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-blue-50 border-blue-200 text-blue-800';
+      return (
+        <div className={`p-4 mb-4 rounded-lg border ${bg} flex justify-between items-start shadow-sm`}>
+          <div><span className="font-bold">{type === 'error' ? 'Error: ' : 'Info: '}</span>{message}</div>
+          {onClose && <button onClick={onClose} className="text-gray-500 hover:text-gray-800 ml-4"><Icons.X /></button>}
+        </div>
+      );
+    };
+
+    const KPIBox = ({ title, value }) => (
+      <div className="bg-white rounded-lg shadow-sm p-4 flex flex-col items-center justify-center border border-slate-100/60 hover:shadow-md transition-shadow">
+        <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 text-center">{title}</div>
+        <div className="text-3xl font-bold text-slate-800 tracking-tight text-center truncate w-full px-2" title={value}>{value}</div>
+      </div>
+    );
+
+    const EmptyState = ({ message = "No visualizable data available.", height = "h-96", icon = <Icons.Search /> }) => (
+      <div className={`bg-white rounded-lg shadow-sm border border-gray-200 ${height} flex flex-col items-center justify-center text-slate-400`}>
+        <div className="mb-3 text-slate-300 opacity-50">{icon}</div>
+        <span className="text-sm font-medium">{message}</span>
+      </div>
+    );
+
+    // ==========================================
+    // 6. CHART COMPONENTS
+    // ==========================================
+    const TrendChart = ({ statusData }) => {
+      const [selectedTitles, setSelectedTitles] = useState([]);
+      
+      useEffect(() => {
+        if (statusData && statusData.length > 0 && selectedTitles.length === 0) {
+          setSelectedTitles([statusData[0].title]);
+        }
+      }, [statusData]);
+
+      const toggleTitle = (t) => {
+          setSelectedTitles(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+      };
+
+      const chartData = useMemo(() => {
+        if (!statusData || statusData.length === 0 || selectedTitles.length === 0) return [];
+        
+        // 1. Extract exact week order from status table to prevent sorting issues across years
+        const orderedWeeks = [];
+        statusData.forEach(section => {
+          if (selectedTitles.includes(section.title)) {
+            section.data.forEach(item => {
+              if (!orderedWeeks.includes(item.week)) orderedWeeks.push(item.week);
+            });
+          }
+        });
+
+        const weekMap = new Map();
+        orderedWeeks.forEach(w => weekMap.set(w, { week: w }));
+        
+        statusData.forEach(section => {
+          if (selectedTitles.includes(section.title)) {
+            section.data.forEach(item => {
+              const wData = weekMap.get(item.week);
+              
+              if (selectedTitles.length === 1) {
+                 wData.inspQty = item.inspQty;
+                 wData.failQty = item.failQty;
+              }
+              wData[section.title] = item.inspQty > 0 ? Number(((item.failQty / item.inspQty) * 100).toFixed(2)) : 0;
+            });
+          }
+        });
+        
+        // Return without sorting to preserve exact Excel column order
+        return Array.from(weekMap.values());
+      }, [statusData, selectedTitles]);
+
+      if (!statusData || statusData.length === 0) return <EmptyState message="Status Table Trend Data Not Found" />;
+
+      const isMulti = selectedTitles.length > 1;
+
+      return (
+        <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 h-[450px] flex flex-col">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-start mb-6 gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">LCS Quality Status Trend (Weekly)</h2>
+              <p className="text-xs text-slate-500 mt-1">Multi-select to compare failure rates across sections.</p>
+            </div>
+            <div className="flex flex-wrap gap-2 max-w-lg justify-end">
+              {statusData.map(s => {
+                const isActive = selectedTitles.includes(s.title);
+                return (
+                  <button key={s.title} onClick={() => toggleTitle(s.title)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${isActive ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
+                    {s.title}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex-1 w-full">
+            {chartData.length === 0 ? <EmptyState message="Please select at least one section" height="h-full" /> : 
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="week" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                {!isMulti && <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />}
+                <YAxis yAxisId="right" orientation={isMulti ? "left" : "right"} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(val) => `${val}%`} />
+                <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                
+                {!isMulti && <Bar yAxisId="left" dataKey="inspQty" name="Insp. Q'ty" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={24} />}
+                {!isMulti && <Bar yAxisId="left" dataKey="failQty" name="Fail Q'ty" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={24} />}
+                
+                {selectedTitles.map((title, i) => (
+                  <Line key={title} yAxisId="right" type="monotone" dataKey={title} name={isMulti ? title : "Failure Rate (%)"} stroke={isMulti ? COLORS[i % COLORS.length] : "#f59e0b"} strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                ))}
+              </ComposedChart>
+            </ResponsiveContainer>}
+          </div>
+        </div>
+      );
+    };
+
+    const PieChartUI = ({ data, onDrillDown }) => {
+      const [groupBy, setGroupBy] = useState('category');
+      
+      const chartData = useMemo(() => {
+        if (!data || data.length === 0) return [];
+        const agg = {};
+        data.forEach(item => {
+          const key = String(item[groupBy] || 'Unknown');
+          if (!agg[key]) agg[key] = 0;
+          agg[key] += getQty(item);
+        });
+        
+        const sorted = Object.entries(agg).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+        if (sorted.length <= 6) return sorted;
+        
+        const top5 = sorted.slice(0, 5);
+        const othersVal = sorted.slice(5).reduce((sum, item) => sum + item.value, 0);
+        if (othersVal > 0) top5.push({ name: 'Others', value: othersVal });
+        return top5;
+      }, [data, groupBy]);
+
+      if (chartData.length === 0) return <EmptyState />;
+
+      return (
+        <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 h-96 flex flex-col relative">
+          <div className="flex justify-between items-center mb-4 z-10 relative">
+            <h2 className="text-lg font-bold text-slate-800">Distribution Analysis</h2>
+            <select className="border rounded p-1.5 text-xs outline-none focus:border-blue-500 bg-slate-50 text-slate-700" value={groupBy} onChange={(e) => setGroupBy(e.target.value)}>
+              <option value="category">By Category</option>
+              <option value="vendor">By Vendor</option>
+              <option value="type">By Type</option>
+              <option value="problemGroup">By Problem Group</option>
+            </select>
+          </div>
+          <p className="text-[10px] text-slate-400 absolute top-12 left-5">Click slice to filter</p>
+          <div className="flex-1 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <RechartsPie>
+                <Pie data={chartData} cx="50%" cy="50%" innerRadius={65} outerRadius={105} paddingAngle={2} dataKey="value" nameKey="name" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} onClick={(entry) => { if(entry && entry.name !== 'Others') onDrillDown(groupBy, entry.name); }} className="cursor-pointer">
+                  {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.name === 'Others' ? '#cbd5e1' : COLORS[index % COLORS.length]} className="hover:opacity-80 transition-opacity" />)}
+                </Pie>
+                <Tooltip formatter={(value) => [value, 'Qty']} contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                <Legend />
+              </RechartsPie>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      );
+    };
+
+    const ParetoChart = ({ data, onDrillDown }) => {
+      const chartData = useMemo(() => {
+        if (!data || data.length === 0) return [];
+        const agg = {};
+        let totalQty = 0;
+        data.forEach(item => {
+          const key = item.problemGroup || 'Unknown';
+          const qty = getQty(item);
+          if (!agg[key]) agg[key] = 0;
+          agg[key] += qty;
+          totalQty += qty;
+        });
+        const sortedData = Object.entries(agg).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+        let cumulativeQty = 0;
+        return sortedData.map(item => {
+          cumulativeQty += item.value;
+          return { ...item, cumulativePercent: totalQty > 0 ? Number(((cumulativeQty / totalQty) * 100).toFixed(1)) : 0 };
+        });
+      }, [data]);
+
+      if (chartData.length === 0) return <EmptyState />;
+
+      return (
+        <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 h-[400px] flex flex-col relative">
+          <h2 className="text-lg font-bold text-slate-800 mb-1 z-10 relative">Top Problem Issues (Pareto)</h2>
+          <p className="text-[10px] text-slate-400 absolute top-12 left-5 z-10">Click bar to filter</p>
+          <div className="flex-1 w-full mt-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} interval={0} angle={-45} textAnchor="end" />
+                <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                <YAxis yAxisId="right" orientation="right" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(val) => `${val}%`} />
+                <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{fill: '#f8fafc'}} />
+                <Bar yAxisId="left" dataKey="value" name="Defective Q'ty" radius={[4, 4, 0, 0]} barSize={40} onClick={(entry) => { if(entry && entry.name) onDrillDown('problemGroup', entry.name); }} className="cursor-pointer-bar">
+                  {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.cumulativePercent <= 80 ? '#ef4444' : '#94a3b8'} />)}
+                </Bar>
+                <Line yAxisId="right" type="monotone" dataKey="cumulativePercent" name="Cumulative %" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 4 }} />
+                <ReferenceLine yAxisId="right" y={80} stroke="#ef4444" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: '80%', fill: '#ef4444', fontSize: 12, fontWeight: 600 }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      );
+    };
+
+    const HeatmapChart = ({ data, onDrillDown }) => {
+      const chartData = useMemo(() => {
+        if (!data || data.length === 0) return null;
+        const vendors = new Set();
+        const cols = new Set();
+        const matrix = new Map();
+        let maxQty = 0;
+
+        data.forEach(item => {
+          const qty = getQty(item);
+          if (qty <= 0) return;
+          const v = item.vendor || 'Unknown';
+          const c = item.problemGroup || 'Unknown';
+          
+          vendors.add(v);
+          cols.add(c);
+          
+          if (!matrix.has(v)) matrix.set(v, new Map());
+          const currentQty = matrix.get(v).get(c) || 0;
+          matrix.get(v).set(c, currentQty + qty);
+          
+          if (currentQty + qty > maxQty) maxQty = currentQty + qty;
+        });
+
+        return {
+          vendors: Array.from(vendors).sort(),
+          cols: Array.from(cols).sort(),
+          matrix, maxQty
+        };
+      }, [data]);
+
+      if (!chartData || chartData.vendors.length === 0) return <EmptyState message="Not enough data for Heatmap" />;
+      const { vendors, cols, matrix, maxQty } = chartData;
+
+      const getColor = (val) => {
+        if (!val) return 'bg-slate-50 text-transparent';
+        const ratio = val / maxQty;
+        if (ratio > 0.8) return 'bg-red-500 text-white font-bold shadow-inner';
+        if (ratio > 0.5) return 'bg-red-400 text-white font-medium';
+        if (ratio > 0.2) return 'bg-red-300 text-red-900';
+        return 'bg-red-100 text-red-800';
+      };
+
+      return (
+        <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 h-96 flex flex-col relative overflow-hidden">
+          <div className="flex justify-between items-center mb-4 z-10 relative">
+            <h2 className="text-lg font-bold text-slate-800">Defect Heatmap (By Problem Group)</h2>
+          </div>
+          <div className="flex-1 overflow-auto custom-scrollbar border border-slate-200 rounded-lg bg-slate-50 relative">
+            <table className="min-w-full text-xs text-center border-collapse">
+              <thead className="sticky top-0 z-20">
+                <tr>
+                  <th className="p-2 border-b border-r border-slate-200 text-left sticky left-0 bg-slate-100 z-30 w-32 font-bold text-slate-700 shadow-[1px_1px_0_0_#e2e8f0]">Vendor</th>
+                  {cols.map(c => <th key={c} className="p-2 border-b border-r border-slate-200 font-medium text-slate-600 truncate max-w-[150px] bg-slate-100 shadow-[0_1px_0_0_#e2e8f0]" title={c}>{c}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {vendors.map(v => (
+                  <tr key={v} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="p-2 border-b border-r border-slate-200 font-semibold text-left sticky left-0 bg-white z-10 shadow-[1px_0_0_0_#e2e8f0] truncate max-w-[120px] text-slate-700" title={v}>{v}</td>
+                    {cols.map(c => {
+                      const val = matrix.get(v)?.get(c) || 0;
+                      return (
+                        <td key={c} onClick={() => onDrillDown({ vendor: v, problemGroup: c })} className={`p-2 border-b border-r border-white transition-colors cursor-pointer hover:opacity-80 ${getColor(val)}`} title={`${v} ➔ ${c}: ${val}`}>
+                          {val > 0 ? val : ''}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    };
+
+    // ==========================================
+    // 7. DATA TABLE
+    // ==========================================
+    const DataTable = ({ data }) => {
+      const [sortConfig, setSortConfig] = useState({ key: 'weekNum', direction: 'desc' });
+      const [currentPage, setCurrentPage] = useState(1);
+      const rowsPerPage = 50;
+
+      const handleSort = (key) => {
+        let direction = 'desc';
+        if (sortConfig.key === key && sortConfig.direction === 'desc') direction = 'asc';
+        setSortConfig({ key, direction });
+      };
+
+      const sortedData = useMemo(() => {
+        if (!data) return [];
+        const sortableItems = [...data];
+        sortableItems.sort((a, b) => {
+          let aVal = a[sortConfig.key];
+          let bVal = b[sortConfig.key];
+          if (sortConfig.key === 'defectiveQty') {
+            aVal = getQty(a);
+            bVal = getQty(b);
+          }
+          if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+          return 0;
+        });
+        return sortableItems;
+      }, [data, sortConfig]);
+
+      const totalPages = Math.ceil(sortedData.length / rowsPerPage) || 1;
+      const currentData = sortedData.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+
+      useEffect(() => { setCurrentPage(1); }, [data]);
+
+      const Th = ({ label, sortKey, width = "auto" }) => (
+        <th className={`px-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap w-[${width}]`} onClick={() => handleSort(sortKey)}>
+          <div className="flex items-center gap-1">
+            {label}
+            {sortConfig.key === sortKey && (
+              <span className="text-blue-500">{sortConfig.direction === 'asc' ? <Icons.ChevronUp /> : <Icons.ChevronDown />}</span>
+            )}
+          </div>
+        </th>
+      );
+
+      return (
+        <div className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 flex flex-col mt-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-bold text-slate-800">Raw Data Records</h2>
+            <div className="text-sm font-medium text-slate-500 bg-slate-50 px-3 py-1 rounded-full">
+              Showing {((currentPage - 1) * rowsPerPage) + 1} - {Math.min(currentPage * rowsPerPage, sortedData.length)} of {sortedData.length}
+            </div>
+          </div>
+          <div className="overflow-x-auto max-h-[500px] custom-scrollbar border border-slate-200 rounded-lg">
+            <table className="min-w-full text-sm text-left">
+              <thead className="text-xs text-slate-600 uppercase bg-slate-50 sticky top-0 z-10 shadow-sm">
+                <tr>
+                  <Th label="Week" sortKey="weekNum" />
+                  <Th label="Vendor" sortKey="vendor" />
+                  <Th label="Type" sortKey="type" />
+                  <Th label="Model" sortKey="modelName" />
+                  <Th label="Category" sortKey="category" />
+                  <Th label="Problem Group" sortKey="problemGroup" />
+                  <Th label="Qty" sortKey="defectiveQty" />
+                  <th className="px-4 py-3 min-w-[250px]">Description</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {currentData.length === 0 ? (
+                  <tr><td colSpan="8" className="text-center py-10 text-slate-400">No records found.</td></tr>
+                ) : (
+                  currentData.map((row, idx) => (
+                    <tr key={row.id || idx} className="bg-white hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 whitespace-nowrap text-slate-600 font-medium">{row.week}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{row.vendor}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{row.type}</td>
+                      <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-700">{row.modelName}</td>
+                      <td className="px-4 py-3 whitespace-nowrap"><span className="bg-indigo-50 text-indigo-600 text-xs px-2.5 py-0.5 rounded-full border border-indigo-100">{row.category}</span></td>
+                      <td className="px-4 py-3 whitespace-nowrap text-red-500 font-medium">{row.problemGroup}</td>
+                      <td className="px-4 py-3 whitespace-nowrap font-bold text-slate-700">{getQty(row)}</td>
+                      <td className="px-4 py-3 max-w-xs truncate text-slate-500" title={row.problemDescription}>{row.problemDescription}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex justify-between items-center mt-5">
+            <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-4 py-1.5 border border-slate-200 rounded-md text-sm font-medium disabled:opacity-40 hover:bg-slate-50 text-slate-600 transition-colors">Previous</button>
+            <span className="text-sm font-medium text-slate-500">Page {currentPage} of {totalPages}</span>
+            <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="px-4 py-1.5 border border-slate-200 rounded-md text-sm font-medium disabled:opacity-40 hover:bg-slate-50 text-slate-600 transition-colors">Next</button>
+          </div>
+        </div>
+      );
+    };
+
+    // ==========================================
+    // 8. MAIN APP
+    // ==========================================
+    const initialFilters = { vendor: null, type: null, modelName: null, category: null, week: null, problemGroup: null, keyword: '' };
+
+    const App = () => {
+      const [data, setData] = useState([]);
+      const [statusData, setStatusData] = useState([]);
+      const [status, setStatus] = useState('idle'); // idle, loading, processing, success, error
+      const [errorMessage, setErrorMessage] = useState('');
+      const [filename, setFilename] = useState('');
+      const [filters, setFilters] = useState(initialFilters);
+      const fileInputRef = useRef(null);
+
+      const handleFileUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        setData([]); setStatusData([]); setFilters(initialFilters); setErrorMessage('');
+        setStatus('loading'); setFilename(file.name);
+        
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          setStatus('processing');
+          setTimeout(() => {
+            try {
+              const bstr = evt.target.result;
+              const wb = window.XLSX.read(bstr, { type: 'binary' });
+              
+              const issueWs = wb.Sheets['LCS Quality Issue List'];
+              const statusWs = wb.Sheets['LCS Quality Status Table'];
+              
+              if (!issueWs) throw new Error('Missing "LCS Quality Issue List" worksheet.');
+              
+              const parsedIssue = parseIssueList(issueWs);
+              setData(parsedIssue);
+
+              if (statusWs) {
+                 const rawStatusData = window.XLSX.utils.sheet_to_json(statusWs, { header: 1, defval: null });
+                 const parsedStatus = parseStatusTable(rawStatusData);
+                 setStatusData(parsedStatus);
+              }
+              
+              setStatus('success');
+            } catch (error) {
+              console.error(error);
+              setErrorMessage(error.message || "Failed to parse Excel file.");
+              setStatus('error');
+            }
+          }, 50);
+        };
+        reader.onerror = () => { setErrorMessage("File read error."); setStatus('error'); };
+        reader.readAsBinaryString(file);
+        e.target.value = '';
+      };
+
+      const filteredData = useFilteredData(data, filters);
+      const kpis = useKPIs(filteredData, statusData);
+
+      const getUniqueValues = useCallback((key) => {
+        if (key === 'week') {
+            return Array.from(new Set(data.map(item => item.week).filter(v => v && v !== 'Unknown'))).sort((a,b) => getWeekNum(b) - getWeekNum(a));
+        }
+        return Array.from(new Set(data.map(item => item[key]).filter(v => v && v !== 'Unknown'))).sort();
+      }, [data]);
+
+      const handleDrillDown = useCallback((key, value) => {
+          setFilters(prev => {
+             if (typeof key === 'object') {
+                 const newFilters = { ...prev };
+                 for (const k in key) {
+                     newFilters[k] = newFilters[k] === key[k] ? null : key[k];
+                 }
+                 return newFilters;
+             }
+             return { ...prev, [key]: prev[key] === value ? null : value };
+          });
+      }, []);
+
+      const activeFilterKeys = Object.keys(filters).filter(k => k !== 'keyword' && filters[k] !== null);
+
+      if (status === 'idle' || status === 'loading' || status === 'processing' || (status === 'error' && data.length === 0)) {
+        return (
+          <div className="min-h-screen flex flex-col items-center justify-center p-4">
+            <div className="bg-white p-10 rounded-2xl shadow-xl border border-slate-100 text-center max-w-lg w-full">
+              <div className="text-blue-500 flex justify-center mb-5"><Icons.FileSpreadsheet /></div>
+              <h1 className="text-2xl font-bold text-slate-800 mb-2">LCS Quality Dashboard Pro</h1>
+              <p className="text-sm text-slate-500 mb-8">Upload LCS Quality Weekly Report to visualize metrics</p>
+              
+              {errorMessage && <AlertBanner type="error" message={errorMessage} onClose={() => setErrorMessage('')} />}
+              
+              <input type="file" accept=".xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+              
+              <button 
+                onClick={() => fileInputRef.current.click()}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={status === 'loading' || status === 'processing'}
+              >
+                {status === 'loading' || status === 'processing' ? (
+                  <><div className="loader border-[3px]"></div> <span className="font-semibold">{status === 'processing' ? 'Parsing Data...' : 'Reading File...'}</span></>
+                ) : (
+                  <><Icons.Upload /> <span className="font-semibold">Upload Excel File</span></>
+                )}
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto">
+          {errorMessage && <AlertBanner type="error" message={errorMessage} onClose={() => setErrorMessage('')} />}
+          
+          <header className="mb-6 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
+            <div>
+              <h1 className="text-3xl font-extrabold text-slate-900 flex items-center gap-2 tracking-tight">
+                <Icons.FileSpreadsheet /> LCS Quality Dashboard
+              </h1>
+              <p className="text-sm text-slate-500 mt-1.5 flex items-center gap-2">
+                Current source: <span className="font-medium text-slate-700 bg-slate-200 px-2.5 py-0.5 rounded-md shadow-inner">{filename}</span>
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <input type="file" accept=".xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+              <button onClick={() => fileInputRef.current.click()} className="bg-white shadow-sm border border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-700 font-medium py-2 px-4 rounded-lg text-sm transition-all flex items-center gap-2">
+                <Icons.Upload /> Replace File
+              </button>
+            </div>
+          </header>
+
+          {/* Filter Panel */}
+          <div className="bg-white p-5 rounded-lg shadow-sm border border-slate-200 mb-6 flex flex-col gap-5">
+            <div className="flex flex-col md:flex-row justify-between md:items-center gap-3">
+              <h2 className="text-sm font-bold text-slate-700 flex items-center gap-2 uppercase tracking-wide"><Icons.Search /> Global Filters</h2>
+              
+              {/* Active Filter Tags */}
+              <div className="flex flex-wrap items-center gap-2 flex-1 md:ml-6">
+                {activeFilterKeys.map(k => (
+                  <span key={k} className="bg-blue-50 text-blue-700 text-xs font-medium px-2.5 py-1 rounded-full border border-blue-200 flex items-center gap-1.5 shadow-sm">
+                    {k.replace('modelName', 'Model').replace('problemGroup', 'Problem')}: {filters[k]}
+                    <button onClick={() => setFilters(prev => ({...prev, [k]: null}))} className="hover:text-red-500 hover:bg-red-50 rounded-full p-0.5 transition-colors"><Icons.X /></button>
+                  </span>
+                ))}
+              </div>
+
+              {(activeFilterKeys.length > 0 || filters.keyword) && (
+                <button onClick={() => setFilters(initialFilters)} className="text-xs font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 hover:text-slate-800 px-3 py-1.5 rounded-md transition-colors whitespace-nowrap">
+                  Clear All
+                </button>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+              {['vendor', 'type', 'modelName', 'category', 'problemGroup'].map(key => (
+                <div className="flex flex-col" key={key}>
+                  <label className="text-[11px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">{key.replace('modelName', 'Model').replace('problemGroup', 'Problem')}</label>
+                  <select className="border border-slate-200 rounded-md p-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50/50 hover:bg-white transition-colors cursor-pointer" value={filters[key] || 'ALL'} onChange={(e) => setFilters(prev => ({ ...prev, [key]: e.target.value === 'ALL' ? null : e.target.value }))}>
+                    <option value="ALL">All {key.replace('modelName', 'Model')}</option>
+                    {getUniqueValues(key).map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
+              ))}
+              <div className="flex flex-col">
+                <label className="text-[11px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Search Keyword</label>
+                <input type="text" placeholder="Search..." className="border border-slate-200 rounded-md p-2 text-sm w-full outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50/50 hover:bg-white transition-colors" value={filters.keyword} onChange={(e) => setFilters(prev => ({ ...prev, keyword: e.target.value }))} />
+              </div>
+            </div>
+          </div>
+
+          {/* KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <KPIBox title="Total Defect Qty" value={kpis.totalDefective.toLocaleString()} />
+            <KPIBox title="Worst Model" value={kpis.worstModelName} />
+            <KPIBox title="Top Vendor" value={kpis.topVendorName} />
+            <KPIBox title="Top Problem" value={kpis.topIssueName} />
+          </div>
+
+          {/* Charts */}
+          <div className="grid grid-cols-1 mb-6"><TrendChart statusData={statusData} /></div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6"><PieChartUI data={filteredData} onDrillDown={handleDrillDown} /><HeatmapChart data={filteredData} onDrillDown={handleDrillDown} /></div>
+          <div className="grid grid-cols-1 mb-6"><ParetoChart data={filteredData} onDrillDown={handleDrillDown} /></div>
+          
+          {/* Data Table */}
+          <DataTable data={filteredData} />
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
