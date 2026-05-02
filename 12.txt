@@ -1,0 +1,94 @@
+     strategy.position_size < 0 and strategy.position_avg_price > 0 ? (strategy.position_avg_price - close) / strategy.position_avg_price * 100.0 : 0.0
+panelStop = strategy.position_size > 0 ? longStop : strategy.position_size < 0 ? shortStop : na
+panelTP1  = strategy.position_size > 0 ? longTP1 : strategy.position_size < 0 ? shortTP1 : na
+panelTP2  = strategy.position_size > 0 ? longTP2 : strategy.position_size < 0 ? shortTP2 : na
+signalPxText = "買 " + fmtPrice(lastSignalBuyPrice) + " / 賣 " + fmtPrice(lastSignalSellPrice)
+// ============================================================================
+// Plot
+// ============================================================================
+plot(ma1Show ? ma1v : na, "MA1", color = ma1Col, linewidth = 1)
+plot(ma2Show ? ma2v : na, "MA2", color = ma2Col, linewidth = 1)
+plot(ma3Show ? ma3v : na, "MA3", color = ma3Col, linewidth = 2)
+plot(ma4Show ? ma4v : na, "MA4", color = ma4Col, linewidth = 2)
+plot(ma5Show ? ma5v : na, "MA5", color = ma5Col, linewidth = 2)
+plot(ma6Show ? ma6v : na, "MA6", color = ma6Col, linewidth = 3)
+f34a = plot(ma3Show and ma4Show and fillMA34 ? ma3v : na, display = display.none)
+f34b = plot(ma3Show and ma4Show and fillMA34 ? ma4v : na, display = display.none)
+fill(f34a, f34b, color = ma3v > ma4v ? color.new(#ff4444, 85) : color.new(#44ff44, 85), title = "MA3/MA4 Fill")
+bbBasisCol = srsiShow ? srsiCol : color.new(color.blue, 20)
+bbBandCol  = srsiShow ? srsiCol : color.new(#888888, 40)
+bbFillCol  = srsiShow ? srsiBg : color.new(#888888, 90)
+plot(bbBasis, "BB Basis", color = bbBasisCol, linewidth = 1)
+bbUPlot = plot(bbUpper, "BB Upper", color = bbBandCol, linewidth = 1)
+bbLPlot = plot(bbLower, "BB Lower", color = bbBandCol, linewidth = 1)
+fill(bbUPlot, bbLPlot, color = bbFillCol, title = "BB Fill")
+plot(showDVWAP ? dVWAP : na, "日VWAP", color = color.new(#2962ff, 0), linewidth = 2)
+plot(showWVWAP ? wVWAP : na, "週VWAP", color = color.new(#ff6d00, 0), linewidth = 3)
+plot(showMVWAP ? mVWAP : na, "月VWAP", color = color.new(#9c27b0, 0), linewidth = 2)
+plot(stShow ? stLine : na, "SuperTrend", color = stBull ? color.new(#ff4444, 0) : color.new(#44ff44, 0), linewidth = 2)
+plot(showLim ? limUpPx : na, "漲停線", color = color.new(#ff0000, 45), linewidth = 1, style = plot.style_linebr)
+plot(showLim ? limDnPx : na, "跌停線", color = color.new(#00cc00, 45), linewidth = 1, style = plot.style_linebr)
+plot(strategy.position_size > 0 ? longStop : na, "多單停損", color = color.new(#00aa00, 0), linewidth = 2, style = plot.style_linebr)
+plot(strategy.position_size > 0 ? longTP1 : na, "多單TP1", color = color.new(#ff6666, 0), linewidth = 1, style = plot.style_linebr)
+plot(strategy.position_size > 0 ? longTP2 : na, "多單TP2", color = color.new(#ff0000, 0), linewidth = 1, style = plot.style_linebr)
+plot(strategy.position_size < 0 ? shortStop : na, "空單停損", color = color.new(#ff0000, 0), linewidth = 2, style = plot.style_linebr)
+plot(strategy.position_size < 0 ? shortTP1 : na, "空單TP1", color = color.new(#66ff66, 0), linewidth = 1, style = plot.style_linebr)
+plot(strategy.position_size < 0 ? shortTP2 : na, "空單TP2", color = color.new(#00aa00, 0), linewidth = 1, style = plot.style_linebr)
+barCol = sLong ? color.new(#ff0000, 0) : longSig ? color.new(#ff6666, 0) : sShort ? color.new(#00bb00, 0) : shortSig ? color.new(#55ff55, 0) : bull ? color.new(#ff9999, 70) : bear ? color.new(#99ff99, 70) : color.new(color.gray, 70)
+barcolor(barCol)
+plotshape(longOpenSignal, title = "開盤買入提示", location = location.belowbar, style = shape.labelup, color = color.new(#ff4444, 0), text = "開盤買入", textcolor = color.white, size = size.tiny)
+plotshape(shortOpenSignal, title = "開盤賣出提示", location = location.abovebar, style = shape.labeldown, color = color.new(#44ff44, 0), text = "開盤賣出", textcolor = color.white, size = size.tiny)
+plotshape(kdGold, title = "KD 黃金交叉", style = shape.circle, location = location.belowbar, color = color.new(#ffd700, 0), text = "KD", textcolor = color.new(#ffd700, 0), size = size.tiny)
+plotshape(kdDead, title = "KD 死亡交叉", style = shape.xcross, location = location.abovebar, color = color.new(#888888, 0), text = "KD", textcolor = color.new(#888888, 0), size = size.tiny)
+plotshape(showLim and hitLimU, title = "漲停", style = shape.labelup, location = location.abovebar, color = color.new(#ff0000, 20), text = "漲停", textcolor = color.white, size = size.small)
+plotshape(showLim and hitLimD, title = "跌停", style = shape.labeldown, location = location.belowbar, color = color.new(#00cc00, 20), text = "跌停", textcolor = color.white, size = size.small)
+plotshape(showGap and gapUpB, title = "跳空上漲", style = shape.arrowup, location = location.belowbar, color = color.new(#ff8800, 30), text = "Gap↑", textcolor = color.new(#ff8800, 0), size = size.tiny)
+plotshape(showGap and gapDnB, title = "跳空下跌", style = shape.arrowdown, location = location.abovebar, color = color.new(#00ccaa, 30), text = "Gap↓", textcolor = color.new(#00ccaa, 0), size = size.tiny)
+// ============================================================================
+// Panel
+// ============================================================================
+panelPos2 = switch panelPos
+    "右上" => position.top_right
+    "左上" => position.top_left
+    "右下" => position.bottom_right
+    => position.bottom_left
+panelTsz = switch panelSize
+    "tiny" => size.tiny
+    "small" => size.small
+    => size.normal
+var table P = table.new(panelPos2, 2, 14, border_width = 1, border_color = color.new(#333333, 0), frame_width = 1, frame_color = color.new(#666666, 0), bgcolor = color.new(#0a0a14, 84))
+rowBg = color.new(#0a0a14, 84)
+titleBg = color.new(#111122, 0)
+grayCol = color.new(#bbbbbb, 0)
+neutralBg = color.new(#555555, 60)
+bullBg = color.new(#ff0000, 65)
+bearBg = color.new(#00aa00, 65)
+cellRow(row, leftText, rightText, rightBg, rightTc) =>
+    table.cell(P, 0, row, leftText, text_color = grayCol, bgcolor = rowBg, text_size = panelTsz, text_halign = text.align_left)
+    table.cell(P, 1, row, rightText, text_color = rightTc, bgcolor = rightBg, text_size = panelTsz, text_halign = text.align_left)
+if showPanel and barstate.islast
+    table.cell(P, 0, 0, "TW AI Pro+ 回測版", text_color = color.new(#ffd700, 0), bgcolor = titleBg, text_size = panelTsz, text_halign = text.align_left)
+    table.cell(P, 1, 0, syminfo.ticker, text_color = color.white, bgcolor = titleBg, text_size = panelTsz, text_halign = text.align_right)
+    cellRow(1, "AI 決策", aiAction, aiActCol, color.white)
+    cellRow(2, "AI Score / Conf", fmtNum(aiScore) + " / " + fmtPct(aiConf), rowBg, aiScore >= 65 ? color.new(#ff5555, 0) : aiScore <= 35 ? color.new(#55ff55, 0) : color.white)
+    cellRow(3, "最新訊號", latestSignal, latestSignal == "開盤買入" or latestSignal == "強力開盤買入" ? bullBg : str.contains(latestSignal, "賣出") ? bearBg : neutralBg, color.white)
+    cellRow(4, "開盤買 / 賣", signalPxText, rowBg, color.white)
+    cellRow(5, "實際持倉均價", strategy.position_size != 0 ? fmtPrice(actualEntryPrice) : "-", rowBg, color.white)
+    cellRow(6, "浮動損益 %", fmtPct(floatPct), floatPct > 0 ? bullBg : floatPct < 0 ? bearBg : rowBg, color.white)
+    cellRow(7, "市場狀態", regime, regime == "多頭趨勢" ? bullBg : regime == "空頭趨勢" ? bearBg : neutralBg, color.white)
+    cellRow(8, "進場型態", nearLimitUp ? "追高風險" : entryType, nearLimitUp ? color.new(#ff8800, 40) : rowBg, color.white)
+    cellRow(9, "趨勢 / 動能 / 量能", trendTxt + " / " + momTxt + " / " + volTxt, rowBg, color.white)
+    cellRow(10, "VWAP 位置", vwapTxt, close > dVWAP ? bullBg : close < dVWAP ? bearBg : neutralBg, color.white)
+    cellRow(11, "ATR 風險", fmtPct(atrPct) + " / " + atrTxt, atrPct > atrHighRisk ? color.new(#ff8800, 40) : rowBg, color.white)
+    cellRow(12, "停損 / TP1 / TP2", fmtPrice(panelStop) + " / " + fmtPrice(panelTP1) + " / " + fmtPrice(panelTP2), rowBg, color.white)
+    cellRow(13, "不交易原因", nearLimitUp ? "接近漲停，追價風險高" : noTradeReason, noTradeReason == "無有效訊號" ? rowBg : color.new(#ff8800, 45), color.white)
+// ============================================================================
+// Additional alerts
+// ============================================================================
+alertcondition(longOpenSignal, "開盤買入", "開盤買入")
+alertcondition(shortOpenSignal, "開盤賣出", "開盤賣出")
+alertcondition(strongLongOpenSignal, "強力開盤買入", "強力開盤買入")
+alertcondition(strongShortOpenSignal, "強力開盤賣出", "強力開盤賣出")
+alertcondition(stopLongEvent or stopShortEvent, "停損觸發", "停損觸發")
+alertcondition(tp1LongEvent or tp1ShortEvent, "TP1 觸發", "TP1 觸發")
+alertcondition(tp2LongEvent or tp2ShortEvent, "TP2 觸發", "TP2 觸發")
